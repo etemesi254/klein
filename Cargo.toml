@@ -12,3 +12,4 @@ axum = "0.7.5"
 log = "0.4.21"
 serde = { version = "1.0.198", features = ["derive"] }
 ureq = "2.9.6"
+serde_json = "1.0.116"

@@ -7,7 +7,7 @@
 mod config;
 
 use std::io::Read;
-use std::sync::Arc;
+use std::sync::{Arc};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, UNIX_EPOCH};
 use axum::{routing::get, Router, Json};
@@ -15,9 +15,9 @@ use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode};
 use axum::response::Response;
-use axum::routing::any;
+use axum::routing::{any, post};
 use log::{error, info, trace, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use crate::config::{AppConfig, read_config, SingleServer};
 
@@ -82,6 +82,23 @@ fn handle_request(mut req: ureq::Request, incoming: axum::extract::Request) -> R
     };
 }
 
+async fn add_server(State(ctx): State<Arc<AppContext>>,Json(payload): Json<SingleServer>)->Json<HeartBeatResp> {
+    trace!("Starting server add");
+    let start = std::time::Instant::now();
+    trace!("Server details:{:#?}",payload);
+    match ctx.app_config.servers.write() {
+        Ok(mut writer) => {
+            writer.push(payload);
+        }
+        Err(e) => {
+            error!("Could not add server, poisoned mutex, reason:{:?}",e);
+        }
+    }
+    let stop = Instant::now();
+    trace!("Took {:?} ms to add server", stop.duration_since(start).as_millis());
+    return heartbeat(State(ctx)).await;
+}
+
 fn get_server(values: &AppContext) -> Option<SingleServer> {
     let current_val = values.round_robin.fetch_add(1, Ordering::Acquire);
     if let Ok(v) = values.app_config.servers.read() {
@@ -118,8 +135,11 @@ async fn main() {
             let ctx = AppContext::new(config);
 
             // build our application with a route
-            let app = Router::new().fallback(any(re_router))
-                .route("/heartbeat", get(heartbeat)).with_state(Arc::new(ctx));
+            let app = Router::new()
+                .fallback(any(re_router))
+                .route("/heartbeat", get(heartbeat))
+                .route("/add", post(add_server))
+                .with_state(Arc::new(ctx));
             // run it
             match tokio::net::TcpListener::bind(format!("{}:{}", h, p))
                 .await {
