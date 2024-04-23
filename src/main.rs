@@ -82,7 +82,7 @@ fn handle_request(mut req: ureq::Request, incoming: axum::extract::Request) -> R
     };
 }
 
-async fn add_server(State(ctx): State<Arc<AppContext>>,Json(payload): Json<SingleServer>)->Json<HeartBeatResp> {
+async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<SingleServer>) -> Json<HeartBeatResp> {
     trace!("Starting server add");
     let start = std::time::Instant::now();
     trace!("Server details:{:#?}",payload);
@@ -138,6 +138,7 @@ async fn main() {
             let app = Router::new()
                 .fallback(any(re_router))
                 .route("/heartbeat", get(heartbeat))
+                .route("/home",get(home_endpoint))
                 .route("/add", post(add_server))
                 .with_state(Arc::new(ctx));
             // run it
@@ -171,6 +172,30 @@ struct HeartBeatInfo {
     error: Option<String>,
 }
 
+
+#[derive(Serialize)]
+struct HomeResp {
+    message: String,
+    status: String,
+}
+
+async fn home_endpoint(State(ctx): State<Arc<AppContext>>) -> Json<HomeResp> {
+    Json(match get_server(&ctx) {
+        None => {
+            HomeResp {
+                message: "Could not get server".to_string(),
+                status: "error".to_string(),
+            }
+        }
+        Some(chosen_server) => {
+            trace!("Handling request '/home' endpoint via {}\n",chosen_server.name);
+            HomeResp {
+                message: format!("Hello from Server: {}", chosen_server.name),
+                status: "successful".to_string(),
+            }
+        }
+    })
+}
 
 #[derive(Serialize)]
 struct HeartBeatResp {
