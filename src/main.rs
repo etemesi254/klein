@@ -5,6 +5,7 @@
 //! ```
 
 mod config;
+mod load_balancer;
 
 use std::io::Read;
 use std::sync::{Arc};
@@ -20,7 +21,12 @@ use log::{error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use crate::config::{AppConfig, read_config, SingleServer};
+use crate::load_balancer::rep;
 
+/// Initialize the logging library
+///
+/// We use the tracing library to do logging
+/// setting it to be trace for the klein binary
 fn init_log() {
     tracing_subscriber::registry()
         .with(
@@ -138,8 +144,9 @@ async fn main() {
             let app = Router::new()
                 .fallback(any(re_router))
                 .route("/heartbeat", get(heartbeat))
-                .route("/home",get(home_endpoint))
+                .route("/home", get(home_endpoint))
                 .route("/add", post(add_server))
+                .route("/rep", get(rep))
                 .with_state(Arc::new(ctx));
             // run it
             match tokio::net::TcpListener::bind(format!("{}:{}", h, p))
