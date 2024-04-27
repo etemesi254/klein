@@ -1,11 +1,14 @@
 use std::error::Error;
 use std::sync::{Arc, LockResult};
+use std::time::Instant;
 use axum::extract::State;
 use axum::Json;
-use log::error;
-use serde::Serialize;
+use log::{error, trace};
+use serde::{Deserialize, Serialize};
 use tracing_subscriber::field::display::Messages;
 use crate::AppContext;
+use crate::config::SingleServer;
+use crate::heartbeat::{heartbeat, HeartBeatResp};
 
 
 #[derive(Serialize)]
@@ -37,7 +40,7 @@ pub async fn rep(State(ctx): State<Arc<AppContext>>) -> Json<RespResponse> {
             }
         }
         Err(e) => {
-            error!("An error occured, poisoned mutex: {:?}",e);
+            error!("An error occurred, poisoned mutex: {:?}",e);
             RespResponse {
                 message: RepResponseMessage {
                     N: 0,
@@ -47,4 +50,39 @@ pub async fn rep(State(ctx): State<Arc<AppContext>>) -> Json<RespResponse> {
             }
         }
     })
+}
+
+pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<SingleServer>) -> Json<HeartBeatResp> {
+    trace!("Starting server add");
+    let start = std::time::Instant::now();
+    trace!("Server details:{:#?}",payload);
+    match ctx.app_config.servers.write() {
+        Ok(mut writer) => {
+            writer.push(payload);
+        }
+        Err(e) => {
+            error!("Could not add server, poisoned mutex, reason:{:?}",e);
+        }
+    }
+    let stop = Instant::now();
+    trace!("Took {:?} ms to add server", stop.duration_since(start).as_millis());
+    return heartbeat(State(ctx)).await;
+}
+
+
+/// `rm` command endpoint
+#[derive(Deserialize)]
+struct RmRequestLayout {
+    n: usize,
+    hostnames: Vec<String>,
+}
+
+///  Endpoint (/rm, method=DELETE): This endpoint removes server instances in the load balancer to scale down with
+/// decreasing client or system maintenance. The endpoint expects a JSON payload that mentions the number of instances
+/// to be removed and their preferred hostnames (same as container name in docker) in a list. An example request and response
+/// is below.
+pub async  fn remove_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<RmRequestLayout>){
+
+    //if
+
 }
