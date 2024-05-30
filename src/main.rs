@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tracing_subscriber::prelude::*;
 use crate::config::{AppConfig, read_config, SingleServer};
 use crate::heartbeat::{heartbeat, HeartBeatResp};
-use crate::load_balancer::{add_server, rep};
+use crate::load_balancer::{add_server, remove_server, rep};
 
 /// Initialize the logging library
 ///
@@ -48,7 +48,7 @@ struct AppContext {
     app_config: Arc<AppConfig>,
     // Last time we had a heartbeat from the server
     last_hb_time: Arc<AtomicU64>,
-
+    port: Arc<AtomicU64>,
 }
 
 impl AppContext {
@@ -57,6 +57,7 @@ impl AppContext {
             round_robin: Arc::new(AtomicU64::new(0)),
             app_config: Arc::new(app_config),
             last_hb_time: Arc::new(AtomicU64::new(0)),
+            port: Arc::new(AtomicU64::new(18000)),
         };
     }
 }
@@ -133,6 +134,7 @@ async fn main() {
                 .route("/heartbeat", get(heartbeat))
                 .route("/home", get(home_endpoint))
                 .route("/add", post(add_server))
+                .route("/rm", post(remove_server))
                 .route("/rep", get(rep))
                 .with_state(Arc::new(ctx));
             // run it
@@ -152,8 +154,6 @@ async fn main() {
         }
     }
 }
-
-
 
 
 #[derive(Serialize)]

@@ -17,7 +17,7 @@ pub struct SingleServer {
 pub struct AppConf {
     pub(crate) port: u16,
     pub(crate) host: String,
-    pub(crate) servers: HashMap<String, SingleServer>,
+    //pub(crate) servers: HashMap<String, SingleServer>,
 }
 
 pub struct AppConfig {
@@ -31,7 +31,7 @@ impl From<AppConf> for AppConfig {
         AppConfig {
             port: value.port,
             host: value.host,
-            servers: RwLock::new(value.servers.values().into_iter().map(|x| x.to_owned()).collect()),
+            servers: RwLock::new(vec![]),
         }
     }
 }
@@ -42,7 +42,7 @@ pub fn read_config() -> Result<AppConfig, String> {
     let config: AppConf = toml::from_str(&file_contents).map_err(|e| format!("Error occurred when parsing toml config: {e}"))?;
     info!("Port:{}",config.port);
     info!("Host:{}",config.host);
-    info!("Servers: {:#?}",config.servers);
+   // info!("Servers: {:#?}",config.servers);
     trace!("finished reading");
 
     return Ok(AppConfig::from(config));

@@ -1,11 +1,15 @@
 use std::error::Error;
+use std::fmt::Pointer;
+use std::process::Command;
 use std::sync::{Arc, LockResult};
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 use axum::extract::State;
 use axum::Json;
-use log::{error, trace};
+use log::{error, info, trace};
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::field::display::Messages;
+use tracing_subscriber::fmt::format;
 use crate::AppContext;
 use crate::config::SingleServer;
 use crate::heartbeat::{heartbeat, HeartBeatResp};
@@ -52,13 +56,55 @@ pub async fn rep(State(ctx): State<Arc<AppContext>>) -> Json<RespResponse> {
     })
 }
 
-pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<SingleServer>) -> Json<HeartBeatResp> {
+pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<RequestLayout>) -> Json<Vec<RmResponse>> {
     trace!("Starting server add");
     let start = std::time::Instant::now();
-    trace!("Server details:{:#?}",payload);
+    let mut de = vec![];
     match ctx.app_config.servers.write() {
         Ok(mut writer) => {
-            writer.push(payload);
+            for name in &payload.hostnames {
+                let new_port = ctx.port.fetch_add(1, Ordering::AcqRel);
+
+                let command = Command::new("docker")
+                    .arg("run")
+                    .arg("-d")
+                    .arg("--name")
+                    .arg(name)
+                    .arg("-p")
+                    .arg(format!("{}:8000", new_port))
+                    .arg("-e")
+                    .arg(format!("SERVER_ID={}", name))
+                    .arg("nasa_api").output();
+
+                match command {
+                    Ok(e) => {
+                        if e.status.success()  {
+                            writer.push(SingleServer { host: "127.0.0.1".to_string(), port: new_port as u16, name: name.to_string() });
+                            info!("Successfully added server: Output: {:?}",e);
+                            de.push(RmResponse {
+                                name: name.to_owned(),
+                                status: e.status.code().unwrap_or(-255),
+                                stdout: String::from_utf8_lossy(&e.stdout).trim().to_string(),
+                                stderr: String::from_utf8_lossy(&e.stderr).trim().to_string(),
+                            });
+
+                        } else{
+                            error!("Could not add a server  status code failed");
+                            de.push(RmResponse {
+                                name: name.to_owned(),
+                                status: e.status.code().unwrap_or(-255),
+                                stdout: String::from_utf8_lossy(&e.stdout).trim().to_string(),
+                                stderr: String::from_utf8_lossy(&e.stderr).trim().to_string(),
+                            });
+                        }
+
+                    }
+                    Err(e) => {
+                        error!("An error occurred :{}",e);
+                    }
+                }
+            }
+
         }
         Err(e) => {
             error!("Could not add server, poisoned mutex, reason:{:?}",e);
@@ -66,23 +112,65 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
     }
     let stop = Instant::now();
     trace!("Took {:?} ms to add server", stop.duration_since(start).as_millis());
-    return heartbeat(State(ctx)).await;
+    return Json(de);
 }
 
 
 /// `rm` command endpoint
 #[derive(Deserialize)]
-struct RmRequestLayout {
+pub struct RequestLayout {
     n: usize,
     hostnames: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct RmResponse {
+    name: String,
+    status: i32,
+    stdout: String,
+    stderr: String,
 }
 
 ///  Endpoint (/rm, method=DELETE): This endpoint removes server instances in the load balancer to scale down with
 /// decreasing client or system maintenance. The endpoint expects a JSON payload that mentions the number of instances
 /// to be removed and their preferred hostnames (same as container name in docker) in a list. An example request and response
 /// is below.
-pub async  fn remove_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<RmRequestLayout>){
+pub async fn remove_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<RequestLayout>) -> Json<Vec<RmResponse>> {
 
     //if
+    //docker rm -f mycontainer
+    let mut de = vec![];
 
+    match ctx.app_config.servers.write() {
+        Ok(mut writer) => {
+            let new_port = ctx.port.fetch_add(1, Ordering::AcqRel);
+
+            for name in &payload.hostnames {
+                let command = Command::new("docker")
+                    .arg("rm")
+                    .arg("-f")
+                    .arg(name)
+                    .output();
+                match command {
+                    Ok(e) => {
+                        info!("Successfully removed server: Output: {:?}",e);
+                        de.push(RmResponse {
+                            name: name.to_owned(),
+                            status: e.status.code().unwrap_or(-255),
+                            stdout: String::from_utf8_lossy(&e.stdout).trim().to_string(),
+                            stderr: String::from_utf8_lossy(&e.stderr).trim().to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        error!("An error occurred :{}",e);
+                    }
+                }
+                writer.iter().position(|c| &c.name == name);
+            }
+        }
+        Err(e) => {
+            error!("Could not add server, poisoned mutex, reason:{:?}",e);
+        }
+    }
+    Json(de)
 }
