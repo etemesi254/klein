@@ -8,11 +8,12 @@ mod config;
 mod load_balancer;
 mod consistent_hashing;
 mod heartbeat;
+mod prometheus_stats;
 
 use std::io::Read;
 use std::sync::{Arc};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Instant, UNIX_EPOCH};
+use std::time::{Instant};
 use axum::{routing::get, Router, Json};
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -20,11 +21,13 @@ use axum::http::{StatusCode};
 use axum::response::Response;
 use axum::routing::{any, post};
 use log::{error, info, trace, warn};
-use serde::{Deserialize, Serialize};
+use prometheus::{Encoder, TextEncoder};
+use serde::{Serialize};
 use tracing_subscriber::prelude::*;
 use crate::config::{AppConfig, read_config, SingleServer};
-use crate::heartbeat::{heartbeat, HeartBeatResp};
+use crate::heartbeat::{heartbeat};
 use crate::load_balancer::{add_server, remove_server, rep};
+use crate::prometheus_stats::{HTTP_BODY_GAUGE, HTTP_COUNTER, HTTP_REQ_HISTOGRAM};
 
 /// Initialize the logging library
 ///
@@ -96,17 +99,23 @@ fn handle_request(mut req: ureq::Request, incoming: axum::extract::Request) -> R
 fn get_server(values: &AppContext) -> Option<SingleServer> {
     let current_val = values.round_robin.fetch_add(1, Ordering::Acquire);
     if let Ok(v) = values.app_config.servers.read() {
-        let pos = current_val as usize % v.len();
-        let server = v[pos].clone();
-        trace!("Using server {:?} for the request", server.name);
-        return Some(server);
+        if v.len() > 0 {
+            let pos = current_val as usize % v.len();
+            let server = v[pos].clone();
+            trace!("Using server {:?} for the request", server.name);
+            return Some(server);
+        }
     }
     return None;
 }
 
 async fn re_router(State(ctx): State<Arc<AppContext>>, req: Request) -> Response {
+    HTTP_COUNTER.inc();
+
     // choose server
     let server = get_server(&ctx).unwrap();
+    let timer = HTTP_REQ_HISTOGRAM.with_label_values(&[server.name.as_str()]).start_timer();
+
     let uri = req.uri();
     // create base url
     let base_url = format!("http://{}:{}{}", server.host, server.port, uri.path_and_query().map(|c| c.to_string()).unwrap_or(String::new()));
@@ -115,7 +124,26 @@ async fn re_router(State(ctx): State<Arc<AppContext>>, req: Request) -> Response
     let req_method = ureq::request(method.to_string().as_str(), &base_url);
 
     let c = handle_request(req_method, req);
+
+    timer.observe_duration();
     return c;
+}
+
+async fn stats() -> Response<Body> {
+    let encoder = TextEncoder::new();
+
+    let metric_families = prometheus::gather();
+    let mut buffer = vec![];
+    encoder.encode(&metric_families, &mut buffer).unwrap();
+    HTTP_BODY_GAUGE.set(buffer.len() as f64);
+
+    let response = Response::builder()
+        .status(200)
+        .header(axum::http::header::CONTENT_TYPE, encoder.format_type())
+        .body(Body::from(buffer))
+        .unwrap();
+
+    response
 }
 
 #[tokio::main]
@@ -135,6 +163,7 @@ async fn main() {
                 .route("/home", get(home_endpoint))
                 .route("/add", post(add_server))
                 .route("/rm", post(remove_server))
+                .route("/metrics", get(stats))
                 .route("/rep", get(rep))
                 .with_state(Arc::new(ctx));
             // run it

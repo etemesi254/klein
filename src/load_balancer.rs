@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fmt::Pointer;
 use std::process::Command;
 use std::sync::{Arc, LockResult};
@@ -16,6 +15,7 @@ use crate::heartbeat::{heartbeat, HeartBeatResp};
 
 
 #[derive(Serialize)]
+#[allow(non_snake_case)]
 pub struct RepResponseMessage {
     N: usize,
     replicas: Vec<String>,
