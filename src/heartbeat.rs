@@ -31,7 +31,7 @@ pub async fn heartbeat(State(ctx): State<Arc<AppContext>>,
     ctx.last_hb_time.swap(now.as_secs(), Ordering::Acquire);
     let mut hb_time = vec![];
 
-    let servers = ctx.app_config.servers.read().unwrap();
+    let servers = ctx.hash_server.read().unwrap().server_containers();
     // loop through all the configs and see if they are alive
     for server in servers.iter() {
         let req_start = Instant::now();

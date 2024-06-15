@@ -15,3 +15,4 @@ ureq = "2.9.6"
 lazy_static = "1.4.0"
 serde_json = "1.0.116"
 prometheus = "0.13.4"
+nanorand = { version = "0.7.0", default-features = false, features = ["wyrand"] } # random generators for server ids

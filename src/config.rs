@@ -10,6 +10,7 @@ pub struct SingleServer {
     pub host: String,
     pub port: u16,
     pub name: String,
+    pub id: usize,
 }
 
 /// Server configuration
@@ -42,7 +43,7 @@ pub fn read_config() -> Result<AppConfig, String> {
     let config: AppConf = toml::from_str(&file_contents).map_err(|e| format!("Error occurred when parsing toml config: {e}"))?;
     info!("Port:{}",config.port);
     info!("Host:{}",config.host);
-   // info!("Servers: {:#?}",config.servers);
+    // info!("Servers: {:#?}",config.servers);
     trace!("finished reading");
 
     return Ok(AppConfig::from(config));

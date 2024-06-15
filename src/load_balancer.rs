@@ -60,7 +60,7 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
     trace!("Starting server add");
     let start = std::time::Instant::now();
     let mut de = vec![];
-    match ctx.app_config.servers.write() {
+    match ctx.hash_server.write() {
         Ok(mut writer) => {
             for name in &payload.hostnames {
                 let new_port = ctx.port.fetch_add(1, Ordering::AcqRel);
@@ -78,8 +78,8 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
 
                 match command {
                     Ok(e) => {
-                        if e.status.success()  {
-                            writer.push(SingleServer { host: "127.0.0.1".to_string(), port: new_port as u16, name: name.to_string() });
+                        if e.status.success() {
+                            writer.add_server(name.to_string(), "127.0.0.1".to_string(), new_port as u16);
                             info!("Successfully added server: Output: {:?}",e);
                             de.push(RmResponse {
                                 name: name.to_owned(),
@@ -87,8 +87,7 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
                                 stdout: String::from_utf8_lossy(&e.stdout).trim().to_string(),
                                 stderr: String::from_utf8_lossy(&e.stderr).trim().to_string(),
                             });
-
-                        } else{
+                        } else {
                             error!("Could not add a server  status code failed");
                             de.push(RmResponse {
                                 name: name.to_owned(),
@@ -97,14 +96,12 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
                                 stderr: String::from_utf8_lossy(&e.stderr).trim().to_string(),
                             });
                         }
-
                     }
                     Err(e) => {
                         error!("An error occurred :{}",e);
                     }
                 }
             }
-
         }
         Err(e) => {
             error!("Could not add server, poisoned mutex, reason:{:?}",e);
@@ -115,6 +112,7 @@ pub async fn add_server(State(ctx): State<Arc<AppContext>>, Json(payload): Json<
     return Json(de);
 }
 
+fn create_docker_instance() {}
 
 /// `rm` command endpoint
 #[derive(Deserialize)]

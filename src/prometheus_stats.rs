@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use prometheus::{labels, opts, register_counter, register_gauge, register_histogram_vec};
+use prometheus::{CounterVec, Histogram, histogram_opts, labels, opts, register_counter, register_counter_vec, register_gauge, register_histogram, register_histogram_vec};
 use prometheus::{Counter, Encoder, Gauge, HistogramVec, TextEncoder};
 
 lazy_static! {
@@ -9,9 +9,9 @@ lazy_static! {
         labels! {"handler" => "all",}
     ))
     .unwrap();
-    pub static ref HTTP_BODY_GAUGE: Gauge = register_gauge!(opts!(
-        "klein",
-        "The HTTP response sizes in bytes.",
+    pub static ref HTTP_NUM_REQUESTS: Gauge = register_gauge!(opts!(
+        "klein_num_http_requests",
+        "Number of requests in a particular time",
         labels! {"handler" => "all",}
     ))
     .unwrap();
@@ -21,4 +21,10 @@ lazy_static! {
         &["handler"]
     )
     .unwrap();
+
+    pub static ref HTTP_RESPONSE_STATUS: CounterVec = register_counter_vec!(
+        "klein_http_response_status_code",
+        "Number of requests in a particular time",
+        &["handler","status_code"]
+    ).unwrap();
 }

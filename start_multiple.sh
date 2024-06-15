@@ -11,5 +11,6 @@ do
     ee=$(eval "$end_date");
     #echo  $ee,$ss,$start_date,$end_date
 
-    curl "http://localhost:5001/neo?start_date=$ss&&end_date=$ee" >> /dev/null &
+    curl "http://localhost:5001/neo?start_date=$ss&&end_date=$ee" >> /dev/null
+    sleep 5
 done
